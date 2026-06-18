@@ -10,6 +10,12 @@ output/
 *.ngc
 !settings/*.txt
 
-# UGS Classic is downloaded on setup (large binary)
+# Bundled third-party apps (copied by scripts/bundle-apps.ps1 - too large for git)
+vendor/f-engrave/
+vendor/jre/
 vendor/UniversalGcodeSender.zip
 vendor/ugs-classic/UniversalGcodeSender/UniversalGcodeSender.jar
+vendor/extract-tmp/
+
+# Sample image copied by bundle script (optional local copy)
+samples/*.png

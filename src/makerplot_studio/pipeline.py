@@ -10,7 +10,7 @@ from makerplot_studio.backlash import apply_backlash
 from makerplot_studio.config import AppConfig
 from makerplot_studio.fengrave import run_fengrave_batch
 from makerplot_studio.gcode_clean import clean_for_grbl
-from makerplot_studio.paths import find_fengrave
+from makerplot_studio.paths import ensure_output_dir, fengrave_work_dir, find_fengrave
 
 
 @dataclass
@@ -19,12 +19,6 @@ class PrepareResult:
     ready_path: Path
     line_count: int
     preview: str
-
-
-def _output_dir(makerplot_dir: Path) -> Path:
-    out = makerplot_dir / "Backlash Compensated G-Code"
-    out.mkdir(parents=True, exist_ok=True)
-    return out
 
 
 def _safe_slug(name: str) -> str:
@@ -48,13 +42,14 @@ def prepare_job(
 ) -> PrepareResult:
     makerplot = cfg.resolved_makerplot()
     fengrave = find_fengrave(makerplot)
+    work_dir = fengrave_work_dir(makerplot)
 
     if mode == "text":
         settings = cfg.resolved_text_settings()
         gcode_raw = run_fengrave_batch(
             fengrave,
             settings,
-            makerplot,
+            work_dir,
             text=text,
         )
         slug = _safe_slug(job_name or text[:24] or "text")
@@ -62,10 +57,13 @@ def prepare_job(
         settings = cfg.resolved_image_settings()
         if image_path is None:
             raise ValueError("Image path is required for image mode.")
+        image_path = image_path.resolve()
+        if not image_path.is_file():
+            raise ValueError(f"Image not found: {image_path}")
         gcode_raw = run_fengrave_batch(
             fengrave,
             settings,
-            makerplot,
+            work_dir,
             image=image_path,
         )
         slug = _safe_slug(job_name or image_path.stem)
@@ -80,10 +78,9 @@ def prepare_job(
     )
     ready = clean_for_grbl(compensated)
 
-    out_dir = _output_dir(makerplot)
+    out_dir = ensure_output_dir()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     ready_path = out_dir / f"{slug}_{timestamp}_ready.ngc"
-
     ready_path.write_text(ready, encoding="utf-8")
 
     lines = [ln for ln in ready.splitlines() if ln.strip()]

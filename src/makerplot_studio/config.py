@@ -3,21 +3,19 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
+
+from makerplot_studio.paths import PROJECT_ROOT, SETTINGS_DIR, SAMPLES_DIR
 
 
 CONFIG_FILENAME = ".makerplot-studio.json"
-DEFAULT_MAKERPLOT = Path(r"d:\Bambu\MakerPlot\GoogleDrive")
-UGS_RELEASE_URL = (
-    "https://github.com/winder/Universal-G-Code-Sender/releases/download/"
-    "v2.1.23/UniversalGcodeSender.zip"
-)
 
 
 @dataclass
 class AppConfig:
-    makerplot_dir: str = str(DEFAULT_MAKERPLOT)
+    # Optional MakerPlot kit folder (fallback tools + extra sample files)
+    makerplot_dir: str = ""
     backlash_x: float = 0.3
     backlash_y: float = 0.3
     backlash_z: float = 0.3
@@ -28,25 +26,51 @@ class AppConfig:
     java_path: str = ""
     ugs_jar_path: str = ""
 
-    def resolved_makerplot(self) -> Path:
-        return Path(self.makerplot_dir)
+    def resolved_makerplot(self) -> Path | None:
+        if self.makerplot_dir:
+            path = Path(self.makerplot_dir)
+            if path.is_dir():
+                return path
+        return None
 
     def resolved_text_settings(self) -> Path:
         if self.text_settings:
             return Path(self.text_settings)
-        return self.resolved_makerplot() / "f-engrave settings.txt"
+        bundled = SETTINGS_DIR / "text_settings.txt"
+        if bundled.is_file():
+            return bundled
+        kit = self.resolved_makerplot()
+        if kit:
+            kit_settings = kit / "f-engrave settings.txt"
+            if kit_settings.is_file():
+                return kit_settings
+        return bundled
 
     def resolved_image_settings(self) -> Path:
         if self.image_settings:
             return Path(self.image_settings)
-        bundled = Path(__file__).resolve().parents[2] / "settings" / "image_settings.txt"
+        bundled = SETTINGS_DIR / "image_settings.txt"
         if bundled.is_file():
             return bundled
-        return self.resolved_makerplot() / "f-engrave settings.txt"
+        kit = self.resolved_makerplot()
+        if kit:
+            return kit / "f-engrave settings.txt"
+        return bundled
+
+    def default_sample_image(self) -> Path | None:
+        sample = SAMPLES_DIR / "monkey.png"
+        if sample.is_file():
+            return sample
+        kit = self.resolved_makerplot()
+        if kit:
+            kit_sample = kit / "monkey.png"
+            if kit_sample.is_file():
+                return kit_sample
+        return None
 
 
 def config_path(project_root: Path | None = None) -> Path:
-    root = project_root or Path(__file__).resolve().parents[2]
+    root = project_root or PROJECT_ROOT
     return root / CONFIG_FILENAME
 
 

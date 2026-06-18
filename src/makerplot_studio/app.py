@@ -9,7 +9,16 @@ from tkinter import filedialog, messagebox, ttk
 
 from makerplot_studio.com_ports import guess_best_port, list_serial_ports
 from makerplot_studio.config import AppConfig, load_config, save_config
-from makerplot_studio.paths import PROJECT_ROOT, ensure_ugs_jar, find_fengrave, find_java
+from makerplot_studio.paths import (
+    FENGRAVE_EXE,
+    JRE_JAVA,
+    PROJECT_ROOT,
+    UGS_JAR,
+    bundled_apps_present,
+    ensure_ugs_jar,
+    find_fengrave,
+    find_java,
+)
 from makerplot_studio.pipeline import PrepareResult, prepare_job
 from makerplot_studio.ugs_cli import list_ports_via_ugs, send_gcode
 
@@ -108,33 +117,39 @@ class MakerPlotApp(tk.Tk):
             row=0, column=0, columnspan=3, sticky="w", pady=(0, 12)
         )
 
-        ttk.Label(frame, text="MakerPlot folder").grid(row=1, column=0, sticky="w")
-        self.makerplot_var = tk.StringVar(value=self.cfg.makerplot_dir)
+        ttk.Label(frame, text="MakerPlot kit folder (optional)").grid(row=1, column=0, sticky="w")
+        self.makerplot_var = tk.StringVar(value=self.cfg.makerplot_dir or "")
         ttk.Entry(frame, textvariable=self.makerplot_var, width=60).grid(
             row=1, column=1, sticky="ew", padx=8
         )
         ttk.Button(frame, text="Browse…", command=self._browse_makerplot).grid(row=1, column=2)
+        ttk.Label(
+            frame,
+            text="Apps live in vendor/. Kit folder is only needed for first-time bundling or extra samples.",
+            wraplength=640,
+            foreground="#555",
+        ).grid(row=2, column=0, columnspan=3, sticky="w", pady=(4, 0))
 
-        ttk.Label(frame, text="Text settings file").grid(row=2, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(frame, text="Text settings file").grid(row=3, column=0, sticky="w", pady=(8, 0))
         self.text_settings_var = tk.StringVar(value=str(self.cfg.resolved_text_settings()))
         ttk.Entry(frame, textvariable=self.text_settings_var, width=60).grid(
-            row=2, column=1, sticky="ew", padx=8, pady=(8, 0)
-        )
-        ttk.Button(frame, text="Browse…", command=self._browse_text_settings).grid(
-            row=2, column=2, pady=(8, 0)
-        )
-
-        ttk.Label(frame, text="Image settings file").grid(row=3, column=0, sticky="w", pady=(8, 0))
-        self.image_settings_var = tk.StringVar(value=str(self.cfg.resolved_image_settings()))
-        ttk.Entry(frame, textvariable=self.image_settings_var, width=60).grid(
             row=3, column=1, sticky="ew", padx=8, pady=(8, 0)
         )
-        ttk.Button(frame, text="Browse…", command=self._browse_image_settings).grid(
+        ttk.Button(frame, text="Browse…", command=self._browse_text_settings).grid(
             row=3, column=2, pady=(8, 0)
         )
 
+        ttk.Label(frame, text="Image settings file").grid(row=4, column=0, sticky="w", pady=(8, 0))
+        self.image_settings_var = tk.StringVar(value=str(self.cfg.resolved_image_settings()))
+        ttk.Entry(frame, textvariable=self.image_settings_var, width=60).grid(
+            row=4, column=1, sticky="ew", padx=8, pady=(8, 0)
+        )
+        ttk.Button(frame, text="Browse…", command=self._browse_image_settings).grid(
+            row=4, column=2, pady=(8, 0)
+        )
+
         bl = ttk.LabelFrame(frame, text="Backlash compensation (mm)", padding=8)
-        bl.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(16, 0))
+        bl.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(16, 0))
         self.backlash_x = tk.StringVar(value=str(self.cfg.backlash_x))
         self.backlash_y = tk.StringVar(value=str(self.cfg.backlash_y))
         self.backlash_z = tk.StringVar(value=str(self.cfg.backlash_z))
@@ -145,10 +160,13 @@ class MakerPlotApp(tk.Tk):
             ttk.Entry(bl, textvariable=var, width=8).grid(row=0, column=i * 2 + 1, padx=(0, 12))
 
         self.tools_status = ttk.Label(frame, text="Checking tools…", wraplength=640)
-        self.tools_status.grid(row=5, column=0, columnspan=3, sticky="w", pady=(16, 0))
+        self.tools_status.grid(row=6, column=0, columnspan=3, sticky="w", pady=(16, 0))
 
-        ttk.Button(frame, text="Save & validate", command=self._save_setup).grid(
-            row=6, column=0, sticky="w", pady=(12, 0)
+        btn_row = ttk.Frame(frame)
+        btn_row.grid(row=7, column=0, columnspan=3, sticky="w", pady=(12, 0))
+        ttk.Button(btn_row, text="Save & validate", command=self._save_setup).pack(side="left")
+        ttk.Button(btn_row, text="Copy apps to vendor/", command=self._run_bundle).pack(
+            side="left", padx=(8, 0)
         )
         frame.columnconfigure(1, weight=1)
 
@@ -176,8 +194,9 @@ class MakerPlotApp(tk.Tk):
 
         self.image_panel = ttk.LabelFrame(frame, text="Image file", padding=8)
         self.image_panel.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+        default_image = self.cfg.default_sample_image()
         self.image_var = tk.StringVar(
-            value=str(self.cfg.resolved_makerplot() / "monkey.png")
+            value=str(default_image) if default_image else ""
         )
         ttk.Entry(self.image_panel, textvariable=self.image_var, width=60).pack(
             side="left", fill="x", expand=True, padx=(0, 8)
@@ -201,7 +220,7 @@ class MakerPlotApp(tk.Tk):
         )
         ttk.Label(
             frame,
-            text="Runs F-Engrave (batch), applies backlash compensation, and cleans the file for GRBL.",
+            text="Runs F-Engrave (batch), applies backlash compensation, and cleans the file for GRBL. Output is saved to the project output/ folder.",
             wraplength=640,
         ).grid(row=1, column=0, sticky="w")
 
@@ -383,32 +402,93 @@ class MakerPlotApp(tk.Tk):
         return ok
 
     def _validate_tools(self) -> tuple[bool, str]:
-        makerplot = Path(self.cfg.makerplot_dir)
-        fengrave = find_fengrave(makerplot)
+        makerplot = self.cfg.resolved_makerplot()
         lines = []
         ok = True
 
-        if fengrave.is_file():
-            lines.append(f"✓ F-Engrave: {fengrave.name}")
+        if bundled_apps_present():
+            lines.append("✓ Bundled apps in vendor/ (self-contained)")
         else:
-            lines.append(f"✗ F-Engrave not found at {fengrave}")
+            lines.append("○ Bundled apps not complete — run “Copy apps to vendor/”")
+
+        try:
+            fengrave = find_fengrave(makerplot)
+            src = "bundled" if fengrave == FENGRAVE_EXE else "kit"
+            lines.append(f"✓ F-Engrave ({src}): {fengrave}")
+        except FileNotFoundError as exc:
+            lines.append(f"✗ F-Engrave: {exc}")
             ok = False
 
         self.java_path = find_java(self.cfg.java_path, makerplot)
         if self.java_path:
-            lines.append(f"✓ Java: {self.java_path}")
+            src = "bundled" if self.java_path == JRE_JAVA else "system/kit"
+            lines.append(f"✓ Java ({src}): {self.java_path}")
         else:
-            lines.append("✗ Java not found (install JRE 17+ or set path in config)")
+            lines.append("✗ Java not found — run bundle script or install JRE 17+")
             ok = False
 
         try:
             self.ugs_jar = ensure_ugs_jar(self.cfg.ugs_jar_path)
-            lines.append(f"✓ UGS Classic: {self.ugs_jar.name}")
+            src = "bundled" if self.ugs_jar == UGS_JAR else "downloaded"
+            lines.append(f"✓ UGS Classic ({src}): {self.ugs_jar}")
         except Exception as exc:  # noqa: BLE001
             lines.append(f"✗ UGS Classic: {exc}")
             ok = False
 
         return ok, "\n".join(lines)
+
+    def _run_bundle(self) -> None:
+        script = PROJECT_ROOT / "scripts" / "bundle-apps.ps1"
+        kit = self.makerplot_var.get().strip() or r"d:\Bambu\MakerPlot\GoogleDrive"
+        if not Path(kit).is_dir():
+            messagebox.showerror(
+                "Bundle apps",
+                f"MakerPlot kit folder not found:\n{kit}\n\nBrowse to your kit folder first.",
+            )
+            return
+        self._append_log(f"Bundling apps from {kit}…")
+        self.status_var.set("Copying applications…")
+
+        def work() -> None:
+            import subprocess
+
+            try:
+                proc = subprocess.run(
+                    [
+                        "powershell",
+                        "-ExecutionPolicy",
+                        "Bypass",
+                        "-File",
+                        str(script),
+                        "-MakerPlotDir",
+                        kit,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    cwd=str(PROJECT_ROOT),
+                )
+                output = (proc.stdout or "") + (proc.stderr or "")
+
+                def done() -> None:
+                    for line in output.splitlines():
+                        if line.strip():
+                            self._append_log(line)
+                    ok, msg = self._validate_tools()
+                    self.tools_status.configure(text=msg)
+                    self.status_var.set("Bundle finished.")
+                    if proc.returncode == 0:
+                        messagebox.showinfo("Bundle apps", "Applications copied to vendor/.")
+                    else:
+                        messagebox.showerror("Bundle apps", output[-500:] or "Bundle failed.")
+
+                self.after(0, done)
+            except Exception as exc:  # noqa: BLE001
+                self.after(
+                    0,
+                    lambda: messagebox.showerror("Bundle apps", str(exc)),
+                )
+
+        threading.Thread(target=work, daemon=True).start()
 
     def _bootstrap_tools(self) -> None:
         def work() -> None:
