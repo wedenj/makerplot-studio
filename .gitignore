@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+*.log
+.makerplot-studio.json
+output/
+*.ngc
+!settings/*.txt
+
+# UGS Classic is downloaded on setup (large binary)
+vendor/UniversalGcodeSender.zip
+vendor/ugs-classic/UniversalGcodeSender/UniversalGcodeSender.jar

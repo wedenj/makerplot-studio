@@ -1,0 +1,19 @@
+[project]
+name = "makerplot-studio"
+version = "0.1.0"
+description = "Guided prepare-and-send workflow for the MakerPlot pen plotter"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "pyserial>=3.5",
+]
+
+[project.scripts]
+makerplot-studio = "makerplot_studio.app:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
